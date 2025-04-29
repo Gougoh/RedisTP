@@ -16,9 +16,9 @@ router.get('/', async () => {
   }
 })
 
-router.get('/set-token', async () => {
+router.get('/set-token', async ({ request }) => {
   const key = 'auth:token:12345'
-  const value = 'user42'
+  const value = request.input('value')
   const expireInSeconds = 7200
 
   await redis.call('SET', key, value, 'EX', expireInSeconds)
@@ -41,12 +41,13 @@ router.get('/set-token', async () => {
   }
 })
 
-router.get('/create-session', async () => {
-  const key = 'session:user42'
+router.post('/create-session', async ({ request }) => {
+  const { username, email, role } = request.body()
+  const key = 'session:'+username
   const sessionData = {
-    username: 'alice',
-    email: 'alice@example.com',
-    role: 'user'
+    username: username,
+    email: email,
+    role: role
   }
   const expireInSeconds = 1800
 
@@ -66,8 +67,8 @@ router.get('/create-session', async () => {
   }
 })
 
-router.get('/session-ttl', async () => {
-  const key = 'session:user42'
+router.get('/session-ttl', async ({ request }) => {
+  const key = 'session:'+request.input('user')
   const ttl = await redis.call('TTL', key)
 
   return {
@@ -77,10 +78,12 @@ router.get('/session-ttl', async () => {
 })
 
 
-router.get('/store-user-info', async () => {
-  const userKey = 'user42'
+router.post('/store-user-info', async ({ request }) => {
+  const { user, infos } = request.body()
+  const userKey = user
 
-  await redis.call('HSET', userKey, 'name', 'Alice', 'email', 'alice@example.com', 'city', 'Paris')
+  await redis.call('HSET', userKey, 'name', infos.name, 'email', infos.email, 'city', infos.city)
+  
   const fields = await redis.call('HKEYS', userKey)
   const values = await redis.call('HVALS', userKey)
 
@@ -93,12 +96,15 @@ router.get('/store-user-info', async () => {
 })
 
 
-router.get('/create-cart', async () => {
-  const key = 'cart:user42'
-
-  await redis.call('RPUSH', key, 'product:1001')
-  await redis.call('RPUSH', key, 'product:1002')
-  await redis.call('RPUSH', key, 'product:1003')
+router.post('/create-cart', async ({ request }) => {
+  console.log(request.body());
+  const { user, items } = request.body()
+  const key = `cart:${user}`
+  
+  for (const itemKey in items) {
+    const product = items[itemKey]
+      await redis.call('RPUSH', key, product)
+  }
 
   const cartContent = await redis.call('LRANGE', key, 0, -1)
 
@@ -109,8 +115,8 @@ router.get('/create-cart', async () => {
 })
 
 
-router.get('/del-last-item', async () => {
-  const key = 'cart:user42'
+router.get('/del-last-item', async ({ request }) => {
+  const key = 'cart:'+request.input('user')
 
   const delItem = await redis.call('RPOP', key)
   const cartContent = await redis.call('LRANGE', key, 0, -1)
@@ -123,10 +129,12 @@ router.get('/del-last-item', async () => {
 })
 
 
-router.get('/set-stock', async () => {
-  const key = 'stock:product:1001'
-
-  const stock = await redis.call('SET', key, 50)
+router.post('/set-stock', async ({ request }) => {
+  const { product, stockVal } = request.body()
+  const key = 'stock:'+product
+  console.log(key);
+  
+  const stock = await redis.call('SET', key, stockVal)
 
   return {
     message: 'stock créé',
@@ -135,9 +143,10 @@ router.get('/set-stock', async () => {
 })
 
 
-router.get('/remove-from-stock', async () => {
-  const key = 'stock:product:1001'
-
+router.post('/remove-from-stock', async ({ request }) => {
+  const { product } = request.body()
+  const key = 'stock:'+product
+  
   await redis.call('DECR', key)
 
   const stock = await redis.call('GET', key)
@@ -149,10 +158,11 @@ router.get('/remove-from-stock', async () => {
 })
 
 
-router.get('/transaction-ex', async () => {
-  const keyStock1 = 'stock:product:1002'
-  const keyStock2 = 'stock:product:1003'
-  const cartKey = 'cart:user42'
+router.post('/transaction-ex', async ({ request }) => {
+  const { stock1Name, stock2Name, user } = request.body()
+  const keyStock1 = 'stock:product:'+stock1Name
+  const keyStock2 = 'stock:product:'+stock2Name
+  const cartKey = 'cart:'+user
 
   await redis.call('SET', keyStock1, 50)
   await redis.call('SET', keyStock2, 50)
@@ -180,8 +190,9 @@ router.get('/transaction-ex', async () => {
 })
 
 
-router.get('/set-cart-timer', async () => {
-  const cartKey = 'cart:user42'
+router.post('/set-cart-timer', async ({ request }) => {
+  const { user } = request.body()
+  const cartKey = 'cart:'+user
 
   await redis.call('EXPIRE', cartKey, 900)
   const ttl = await redis.call('TTL', cartKey)
@@ -193,9 +204,10 @@ router.get('/set-cart-timer', async () => {
 })
 
 
-router.get('/disconnect', async () => {
-  const authKey = 'auth:token:12345'
-  const sessionKey = 'session:user42'
+router.post('/disconnect', async ({ request }) => {
+  const { auth, session } = request.body()
+  const authKey = 'auth:token:' + auth
+  const sessionKey = 'session:' + session
 
   await redis.call('DEL', authKey, sessionKey)
 
